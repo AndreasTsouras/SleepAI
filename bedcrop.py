@@ -13,25 +13,40 @@ if not cap.isOpened():
     print("Error: Could not open video file!")
     exit()
 
-# Read the first frame from the video
-ret, frame = cap.read()
-if not ret:
-    print("Error: Could not read frame from video!")
-    cap.release()
-    exit()
+# Initialize the HOG person detector
+hog = cv2.HOGDescriptor()
+hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
 
-# Crop the frame: frame[y:y+h, x:x+w]
-cropped_frame = frame[bed_y:bed_y+bed_h, bed_x:bed_x+bed_w]
+# Iterate over frames to find one where no patient is detected
+frame_found = False
+frame_index = 0
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break  # End of video
 
-# Save the cropped frame as an image
-output_image = "cropped_frame.jpg"
-cv2.imwrite(output_image, cropped_frame)
+    frame_index += 1
 
-# Get the absolute path of the saved image and current working directory
-abs_path = os.path.abspath(output_image)
-cwd = os.getcwd()
-
-print(f"Cropped frame saved to {abs_path}")
-print(f"Current working directory: {cwd}")
+    # Crop the frame to the bed region
+    cropped_frame = frame[bed_y:bed_y+bed_h, bed_x:bed_x+bed_w]
+    
+    # Optionally convert to grayscale for detection
+    # (HOG detector can work on color images, but sometimes grayscale works better)
+    gray = cv2.cvtColor(cropped_frame, cv2.COLOR_BGR2GRAY)
+    
+    # Detect people in the cropped region.
+    # You may need to adjust parameters like winStride, padding, and scale
+    rects, weights = hog.detectMultiScale(cropped_frame, winStride=(8,8), padding=(8,8), scale=1.05)
+    
+    # If no detections, assume no patient is in bed.
+    if len(rects) == 0:
+        output_image = f"empty_bed_frame_{frame_index}.jpg"
+        cv2.imwrite(output_image, cropped_frame)
+        print(f"Saved an empty bed frame to {os.path.abspath(output_image)}")
+        frame_found = True
+        break
 
 cap.release()
+
+if not frame_found:
+    print("No frame without a detected patient was found in the video.")
