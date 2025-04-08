@@ -6,28 +6,28 @@ import numpy as np
 BATCH_SIZE = 1
 NUM_THREADS = 2
 DEVICE_ID = 0
-SEQUENCE_LENGTH = 16  # Number of frames per sequence
+SEQUENCE_LENGTH = 16  # frames
 
 class VideoPipeline(pipeline.Pipeline):
     def __init__(self, batch_size, num_threads, device_id, sequence_length, filenames):
         super(VideoPipeline, self).__init__(batch_size, num_threads, device_id, seed=12)
-        # Store the video reader operator as an attribute.
+        # Create the video reader operator; do not call it yet.
         self.reader = fn.readers.video(
             device="gpu",
             filenames=filenames,
             sequence_length=sequence_length,
-            random_shuffle=False  # Set to True if you want random sequences.
+            random_shuffle=False
         )
 
     def define_graph(self):
-        # Call the stored operator to get its output DataNode.
-        output = self.reader(name="Reader")
+        # Simply call the stored operator without extra keyword parameters.
+        output = self.reader()
         return output
 
 # Replace "test_video.asf" with the path to your video file.
 video_file = "test_video.asf"
 
-# Create a pipeline instance.
+# Create and build the pipeline.
 pipe = VideoPipeline(
     batch_size=BATCH_SIZE,
     num_threads=NUM_THREADS,
@@ -35,12 +35,10 @@ pipe = VideoPipeline(
     sequence_length=SEQUENCE_LENGTH,
     filenames=[video_file]
 )
-
-# Build and run the pipeline.
 pipe.build()
-output = pipe.run()
 
-# Convert the output DataNode to a NumPy array.
-# The expected shape is [batch_size, sequence_length, H, W, C]
-frames = output[0].as_array()
+# Run the pipeline.
+output = pipe.run()
+frames = output[0].as_array()  # Expected shape: [BATCH_SIZE, SEQUENCE_LENGTH, H, W, C]
+
 print("DALI pipeline output shape:", frames.shape)
