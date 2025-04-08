@@ -1,66 +1,87 @@
 import cv2
 import numpy as np
-import re
 import os
+import re
 
-# Path to the file that contains the crop values.
-crop_file = "crop_values.txt"  # Update this path as needed
+# File containing the crop values
+crop_file = "crop_values.txt"
 
-# Read the crop values from the file.
+# Folder containing the first frame images for each patient.
+# Assumes files are named like "patient_001_first_frame.jpg" etc.
+input_frames_folder = "first_frames"
+
+# Folder to save the warped (transformed) images.
+output_folder = "warped_frames"
+os.makedirs(output_folder, exist_ok=True)
+
+# Define a regex pattern to parse each line.
+# Expected format: "1:bl:250,350, br:550,550, tl:620,75, tr:800,100"
+pattern = re.compile(
+    r'^(\d+):bl:(\d+),(\d+),\s*br:(\d+),(\d+),\s*tl:(\d+),(\d+),\s*tr:(\d+),(\d+)$'
+)
+
 with open(crop_file, "r") as f:
-    line = f.readline().strip()
-    # Example line: "1: bl250,350, br:550,550, tl:620,75, tr:800,100"
-    # Extract the patient number (if needed) and the rest of the coordinate string.
-    patient_num, coords_str = line.split(":", 1)
-    patient_num = patient_num.strip()
-    
-    # Use regex to match patterns: key (bl, br, tl, tr) followed optionally by a colon, then two numbers.
-    pattern = r"(bl|br|tl|tr):?(\d+),(\d+)"
-    matches = re.findall(pattern, coords_str)
-    
-    # Build a dictionary of coordinates.
-    coords = {}
-    for key, x, y in matches:
-        coords[key] = (int(x), int(y))
+    lines = f.readlines()
 
-print("Parsed crop coordinates:", coords)
+for line in lines:
+    line = line.strip()
+    if not line:
+        continue
 
-# Ensure that all expected keys exist.
-required_keys = ['tl', 'tr', 'br', 'bl']
-for key in required_keys:
-    if key not in coords:
-        print(f"Error: missing coordinate for {key} in file.")
-        exit()
+    match = pattern.match(line)
+    if not match:
+        print(f"Line did not match expected format: {line}")
+        continue
 
-# Define the source points for the perspective transform.
-# Order required: top-left, top-right, bottom-right, bottom-left.
-src_pts = np.float32([coords['tl'], coords['tr'], coords['br'], coords['bl']])
-print("Source points:", src_pts)
+    # Extract values from the regex groups.
+    patient_num = match.group(1)
+    # Bottom left coordinates:
+    bl_x, bl_y = int(match.group(2)), int(match.group(3))
+    # Bottom right coordinates:
+    br_x, br_y = int(match.group(4)), int(match.group(5))
+    # Top left coordinates:
+    tl_x, tl_y = int(match.group(6)), int(match.group(7))
+    # Top right coordinates:
+    tr_x, tr_y = int(match.group(8)), int(match.group(9))
 
-# Define a destination rectangle.
-# For testing, we use fixed dimensions (adjust these if needed).
-dst_width = 361
-dst_height = 515
-dst_pts = np.float32([[0, 0],
-                      [dst_width, 0],
-                      [dst_width, dst_height],
-                      [0, dst_height]])
-print("Destination points:", dst_pts)
+    # For perspective transform, order the source points as:
+    # [top-left, top-right, bottom-right, bottom-left]
+    src_pts = np.float32([
+        [tl_x, tl_y],
+        [tr_x, tr_y],
+        [br_x, br_y],
+        [bl_x, bl_y]
+    ])
 
-# Load a test image (e.g., a saved first frame for the patient).
-input_image = "first_frame.jpg"  # Update with the actual path if different
-image = cv2.imread(input_image)
-if image is None:
-    print("Error: Test image not found!")
-    exit()
+    # Calculate destination rectangle dimensions using distances:
+    width_top = np.linalg.norm(np.array([tr_x, tr_y]) - np.array([tl_x, tl_y]))
+    width_bottom = np.linalg.norm(np.array([br_x, br_y]) - np.array([bl_x, bl_y]))
+    dest_width = int((width_top + width_bottom) / 2)
 
-# Compute the perspective transform matrix.
-M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+    height_left = np.linalg.norm(np.array([bl_x, bl_y]) - np.array([tl_x, tl_y]))
+    height_right = np.linalg.norm(np.array([br_x, br_y]) - np.array([tr_x, tr_y]))
+    dest_height = int((height_left + height_right) / 2)
 
-# Apply the perspective warp.
-warped = cv2.warpPerspective(image, M, (dst_width, dst_height))
+    # Define destination points for the transformed image.
+    dst_pts = np.float32([
+        [0, 0],
+        [dest_width, 0],
+        [dest_width, dest_height],
+        [0, dest_height]
+    ])
 
-# Save the warped image so you can visually check the output.
-output_image = "warped_from_file.jpg"
-cv2.imwrite(output_image, warped)
-print("Warped image saved to:", os.path.abspath(output_image))
+    # Load the corresponding first frame for this patient.
+    input_image_path = os.path.join(input_frames_folder, f"patient_{patient_num}_first_frame.jpg")
+    image = cv2.imread(input_image_path)
+    if image is None:
+        print(f"Could not load image for patient {patient_num} at {input_image_path}")
+        continue
+
+    # Compute the perspective transform matrix and warp the image.
+    M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+    warped = cv2.warpPerspective(image, M, (dest_width, dest_height))
+
+    # Save the warped image so you can verify that it looks correct.
+    output_image_path = os.path.join(output_folder, f"warped_patient_{patient_num}.jpg")
+    cv2.imwrite(output_image_path, warped)
+    print(f"Saved warped image for patient {patient_num} at {os.path.abspath(output_image_path)}")
