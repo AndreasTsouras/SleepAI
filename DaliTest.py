@@ -1,41 +1,46 @@
-import nvidia.dali.fn as fn
-import nvidia.dali.types as types
 import nvidia.dali.pipeline as pipeline
+import nvidia.dali.fn as fn
 import numpy as np
 
 # Parameters
-batch_size = 1
-num_threads = 2
-device_id = 0
-sequence_length = 16  # Number of frames per sequence
+BATCH_SIZE = 1
+NUM_THREADS = 2
+DEVICE_ID = 0
+SEQUENCE_LENGTH = 16  # Number of frames per sequence
 
 class VideoPipeline(pipeline.Pipeline):
     def __init__(self, batch_size, num_threads, device_id, sequence_length, filenames):
         super(VideoPipeline, self).__init__(batch_size, num_threads, device_id, seed=12)
-        self.input = fn.readers.video(
+        # Store the video reader operator as an attribute.
+        self.reader = fn.readers.video(
             device="gpu",
             filenames=filenames,
             sequence_length=sequence_length,
-            random_shuffle=False,
-            shard_id=0,
-            num_shards=1,
-            initial_fill=16,     # number of frames to prefill the buffer
-            file_list=None,
+            random_shuffle=False  # Set to True if you want random sequences.
         )
 
     def define_graph(self):
-        output = self.input(name="Reader")
+        # Call the stored operator to get its output DataNode.
+        output = self.reader(name="Reader")
         return output
 
-# Replace "test_video.asf" with your video file path.
+# Replace "test_video.asf" with the path to your video file.
 video_file = "test_video.asf"
-pipe = VideoPipeline(batch_size=batch_size,
-                     num_threads=num_threads,
-                     device_id=device_id,
-                     sequence_length=sequence_length,
-                     filenames=[video_file])
+
+# Create a pipeline instance.
+pipe = VideoPipeline(
+    batch_size=BATCH_SIZE,
+    num_threads=NUM_THREADS,
+    device_id=DEVICE_ID,
+    sequence_length=SEQUENCE_LENGTH,
+    filenames=[video_file]
+)
+
+# Build and run the pipeline.
 pipe.build()
 output = pipe.run()
-# Convert the output of the first batch to numpy array
-frames = output[0].as_array()  # shape: [batch_size, sequence_length, H, W, C]
+
+# Convert the output DataNode to a NumPy array.
+# The expected shape is [batch_size, sequence_length, H, W, C]
+frames = output[0].as_array()
 print("DALI pipeline output shape:", frames.shape)
