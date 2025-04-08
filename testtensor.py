@@ -3,37 +3,41 @@ import re
 import cv2
 import numpy as np
 
-# --- Step 1: Read Crop Values from File ---
-crop_file = "crop_values.txt"  # your crop file with lines like "24:bl:250,350, br:550,550, tl:620,75, tr:800,100"
+# --- Step 1: Read Crop Values from File (using line order) ---
+crop_file = "crop_values.txt"  # Each row represents one patient in order.
 
 crop_dict = {}
+# Regex pattern to extract coordinates in the format:
+# "001:bl:250,350, br:550,550, tl:620,75, tr:800,100"
 pattern = re.compile(
-    r'^(\d+):bl:(\d+),(\d+),\s*br:(\d+),(\d+),\s*tl:(\d+),(\d+),\s*tr:(\d+),(\d+)$'
+    r'^(?:\d+):bl:(\d+),(\d+),\s*br:(\d+),(\d+),\s*tl:(\d+),(\d+),\s*tr:(\d+),(\d+)$'
 )
 
 with open(crop_file, "r") as f:
-    for line in f:
-        line = line.strip()
-        if not line:
-            continue
-        match = pattern.match(line)
-        if match:
-            # Pad patient number to 3 digits (e.g., "24" becomes "024")
-            patient_number = match.group(1).zfill(3)
-            crop_dict[patient_number] = {
-                'bl': (int(match.group(2)), int(match.group(3))),
-                'br': (int(match.group(4)), int(match.group(5))),
-                'tl': (int(match.group(6)), int(match.group(7))),
-                'tr': (int(match.group(8)), int(match.group(9)))
-            }
-        else:
-            print(f"Line did not match expected format: {line}")
+    lines = f.readlines()
 
-# Debug: print loaded crop keys
+for idx, line in enumerate(lines):
+    line = line.strip()
+    if not line:
+        continue
+    match = pattern.match(line)
+    if match:
+        # Override the patient number with the line order:
+        patient_number = str(idx + 1).zfill(3)  # e.g., 1 becomes "001"
+        crop_dict[patient_number] = {
+            'bl': (int(match.group(1)), int(match.group(2))),
+            'br': (int(match.group(3)), int(match.group(4))),
+            'tl': (int(match.group(5)), int(match.group(6))),
+            'tr': (int(match.group(7)), int(match.group(8)))
+        }
+    else:
+        print(f"Line did not match expected format: {line}")
+
+# Debug: print loaded crop keys to verify order
 print("Loaded crop data keys:", list(crop_dict.keys()))
 
-# --- Step 2: Process First Frame Images ---
-input_frames_folder = "first_frames"  # Folder containing first frame images, e.g. "patient_024_first_frame.jpg"
+# --- Step 2: Process First Frame Images Using Crop Data ---
+input_frames_folder = "first_frames"  # Folder with first frame images, e.g. "patient_001_first_frame.jpg"
 output_folder = "warped_frames"
 os.makedirs(output_folder, exist_ok=True)
 
@@ -44,13 +48,14 @@ for filename in os.listdir(input_frames_folder):
     if not filename.lower().endswith('_first_frame.jpg'):
         continue
 
-    # Extract patient number from filename; expecting pattern "patient_XXX_first_frame.jpg"
+    # Extract patient number from filename; expecting format "patient_XXX_first_frame.jpg"
+    import re
     m = re.search(r'patient_(\d+)_first_frame', filename)
     if not m:
         print(f"Filename '{filename}' does not match expected pattern; skipping.")
         continue
 
-    patient_num = m.group(1).zfill(3)
+    patient_num = m.group(1)
     print(f"Processing file for patient {patient_num} (from filename {filename})")
 
     if patient_num not in crop_dict:
@@ -58,7 +63,7 @@ for filename in os.listdir(input_frames_folder):
         continue
 
     coords = crop_dict[patient_num]
-    # Order source points as: top-left, top-right, bottom-right, bottom-left
+    # For the perspective transform, order points as: top-left, top-right, bottom-right, bottom-left.
     src_pts = np.float32([
         list(coords['tl']),
         list(coords['tr']),
@@ -66,7 +71,7 @@ for filename in os.listdir(input_frames_folder):
         list(coords['bl'])
     ])
 
-    # Compute destination dimensions as the average of corresponding side lengths.
+    # Compute average destination dimensions based on distances:
     width_top = np.linalg.norm(np.array(coords['tr']) - np.array(coords['tl']))
     width_bottom = np.linalg.norm(np.array(coords['br']) - np.array(coords['bl']))
     dest_width = int((width_top + width_bottom) / 2)
