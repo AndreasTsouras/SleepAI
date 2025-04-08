@@ -4,10 +4,7 @@ import cv2
 import numpy as np
 
 # --- Step 1: Read Crop Values from File ---
-
-# File containing crop values in the format:
-# "1:bl:250,350, br:550,550, tl:620,75, tr:800,100"
-crop_file = "crop_values.txt"
+crop_file = "crop_values.txt"  # your crop file with lines like "24:bl:250,350, br:550,550, tl:620,75, tr:800,100"
 
 crop_dict = {}
 pattern = re.compile(
@@ -21,7 +18,7 @@ with open(crop_file, "r") as f:
             continue
         match = pattern.match(line)
         if match:
-            # Pad patient number to 3 digits (e.g., "1" becomes "001")
+            # Pad patient number to 3 digits (e.g., "24" becomes "024")
             patient_number = match.group(1).zfill(3)
             crop_dict[patient_number] = {
                 'bl': (int(match.group(2)), int(match.group(3))),
@@ -32,46 +29,36 @@ with open(crop_file, "r") as f:
         else:
             print(f"Line did not match expected format: {line}")
 
-# Debug: Print out the crop dictionary
-print("Crop data loaded for patients:")
-for pnum, coords in crop_dict.items():
-    print(f" Patient {pnum}: {coords}")
+# Debug: print loaded crop keys
+print("Loaded crop data keys:", list(crop_dict.keys()))
 
 # --- Step 2: Process First Frame Images ---
-
-input_frames_folder = "first_frames"  # Folder containing first frame images
+input_frames_folder = "first_frames"  # Folder containing first frame images, e.g. "patient_024_first_frame.jpg"
 output_folder = "warped_frames"
 os.makedirs(output_folder, exist_ok=True)
 
-# Debug: Print current working directory
-import os
 print("Current working directory:", os.getcwd())
 
-# Iterate over each file in the first_frames folder
 files_processed = 0
 for filename in os.listdir(input_frames_folder):
-    # Debug: print each filename encountered
-    print(f"Found file: {filename}")
-
-    # Expecting filenames like "patient_001_first_frame.jpg"
     if not filename.lower().endswith('_first_frame.jpg'):
-        print(f"Skipping {filename}; does not match expected pattern.")
         continue
 
+    # Extract patient number from filename; expecting pattern "patient_XXX_first_frame.jpg"
     m = re.search(r'patient_(\d+)_first_frame', filename)
     if not m:
         print(f"Filename '{filename}' does not match expected pattern; skipping.")
         continue
 
     patient_num = m.group(1).zfill(3)
-    print(f"Processing file for patient {patient_num}")
+    print(f"Processing file for patient {patient_num} (from filename {filename})")
 
     if patient_num not in crop_dict:
-        print(f"No crop data found for patient {patient_num}; skipping {filename}.")
+        print(f"No crop data found for patient {patient_num}. Available keys: {list(crop_dict.keys())}")
         continue
 
     coords = crop_dict[patient_num]
-    # Order the source points: top-left, top-right, bottom-right, bottom-left.
+    # Order source points as: top-left, top-right, bottom-right, bottom-left
     src_pts = np.float32([
         list(coords['tl']),
         list(coords['tr']),
@@ -79,7 +66,7 @@ for filename in os.listdir(input_frames_folder):
         list(coords['bl'])
     ])
 
-    # Compute destination dimensions based on average widths and heights.
+    # Compute destination dimensions as the average of corresponding side lengths.
     width_top = np.linalg.norm(np.array(coords['tr']) - np.array(coords['tl']))
     width_bottom = np.linalg.norm(np.array(coords['br']) - np.array(coords['bl']))
     dest_width = int((width_top + width_bottom) / 2)
@@ -95,24 +82,21 @@ for filename in os.listdir(input_frames_folder):
         [0, dest_height]
     ])
 
-    # Load the image.
     image_path = os.path.join(input_frames_folder, filename)
     image = cv2.imread(image_path)
     if image is None:
         print(f"Could not load image: {image_path}")
         continue
 
-    # Compute perspective transform and warp the image.
     M = cv2.getPerspectiveTransform(src_pts, dst_pts)
     warped = cv2.warpPerspective(image, M, (dest_width, dest_height))
 
-    # Save the warped image.
     output_path = os.path.join(output_folder, f"warped_patient_{patient_num}.jpg")
     success = cv2.imwrite(output_path, warped)
     if success:
-        print(f"Saved warped image for patient {patient_num} at {os.path.abspath(output_path)}")
+        print(f"Saved warped image for patient {patient_num} to {os.path.abspath(output_path)}")
         files_processed += 1
     else:
         print(f"Failed to save warped image for patient {patient_num}")
 
-print(f"Processing complete. {files_processed} file(s) processed and saved in '{output_folder}'")
+print(f"Processing complete. {files_processed} file(s) processed and saved in '{output_folder}'.")
