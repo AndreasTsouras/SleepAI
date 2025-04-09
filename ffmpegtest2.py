@@ -10,7 +10,7 @@ import math
 BASE_VIDEO_DIR = r"/mnt/d/Student_Video_project"  # Root folder with patient subfolders.
 CROP_FILE = "crop_values.txt"  # Crop file with lines like: 1:bl:250,350, br:550,550, tl:620,75, tr:800,100
 EPOCH_DURATION = 30            # seconds per epoch
-SAMPLE_COUNT = 16              # Desired number of output frames per epoch
+SAMPLE_COUNT = 8              # Desired number of output frames per epoch
 FPS = 25                       # Video frame rate (assumed)
 extraction_fps = SAMPLE_COUNT / EPOCH_DURATION  # ≈ 0.5333 fps
 
@@ -111,7 +111,7 @@ def build_perspective_filter(patient_number):
     br = coords['br']
     bl = coords['bl']
     # Build the filter parameters (as integers separated by colons)
-    perspective_params = f"{tl[0]}:{tl[1]}:{tr[0]}:{tr[1]}:{br[0]}:{br[1]}:{bl[0]}:{bl[1]}:0:0:224:0:224:224:0:224"
+    perspective_params = f"{tl[0]}:{tl[1]}:{tr[0]}:{tr[1]}:{bl[0]}:{bl[1]}:{br[0]}:{br[1]}"
     return perspective_params
 
 # ---------------------
